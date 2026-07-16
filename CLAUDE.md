@@ -208,22 +208,33 @@ code execution is in play; it was organizational tidiness at best. This
 section exists so nobody down the line mistakes the remaining guardrails
 for more than they are.
 
-**What's still structurally protected, and why each one is worth its keep
-despite the "unleash it" mandate** (enforced via `--disallowedTools` in
-`agent_loop.sh` and the `deny` list in `.claude/settings.json`):
+**What's still protected via `--disallowedTools`/`deny`, and the important
+caveat on what that actually buys:**
 - `kalshi_public.py`, `record_trade.py`, `resolve_trades.py`,
-  `data/paper_trades.csv` — the ledger's integrity. `record_trade.py`
-  validates a market is actually open before logging a trade; if the agent
-  could write the CSV directly or edit settlement math, its own track
-  record would stop being evidence of anything, which defeats the entire
-  point of this project (calibration over time, not just activity).
-- `agent_loop.sh`, `run_monitors.sh`, `.claude/settings.json`, `CLAUDE.md` —
-  its own harness/permissions. Letting it edit the rules that constrain it
-  is a straightforward privilege-escalation hole, independent of trading
-  risk entirely.
+  `data/paper_trades.csv`, plus `agent_loop.sh`, `run_monitors.sh`,
+  `.claude/settings.json`, `CLAUDE.md` are all off-limits to the agent's own
+  Edit/Write tool calls during a live turn.
+- **The caveat, stated precisely because it's easy to overclaim:** this
+  only stops Claude Code's Edit/Write *tool* from targeting those paths
+  directly. It does **not** stop a script the agent writes elsewhere (e.g.
+  `monitors/foo.py`) from opening `data/paper_trades.csv` in plain Python
+  and appending a row, once `Bash(python3 *.py:*)` actually executes that
+  script — the tool-permission system has no visibility into what a
+  script's own file I/O does. So the ledger-integrity list above is a real
+  guard against the agent directly editing those files with its tools, but
+  it is **not** a guarantee against a self-authored script achieving the
+  same effect indirectly. The actual backstop for that is convention/
+  instruction (see `monitors/README.md` and the cycle prompt: "log a trade
+  via `record_trade.py`, never write the CSV directly") plus the fact that
+  there's no incentive for the agent to bypass its own validated write path
+  — but don't mistake the `--disallowedTools` list for an airtight technical
+  boundary once arbitrary Python execution is in scope. It's the same
+  caveat as "Bash(python3) already means no directory scoping is real,"
+  applied one level deeper.
 - OS-level scheduling (cron/systemd) is still **not** granted to the agent
   itself — `run_monitors.sh` is a human-installed, fixed-cadence runner.
-  This is a deliberate orthogonal boundary: giving an LLM direct
+  This one *is* a real boundary (it's an access grant, not a file-content
+  question) and is a deliberate orthogonal one: giving an LLM direct
   `crontab`/`systemctl` access is a server-administration risk, not a
   trading-sophistication one, and costs it nothing creative to not have it.
 
@@ -243,13 +254,61 @@ Telegram message outside the existing daily-digest path. Watch
 of this in the first weeks after deploy.
 
 **Not yet deployed as of 2026-07-16:** the expanded allowlist and
-`monitors/`/`run_monitors.sh` scaffold exist in the repo but haven't been
-pushed to the server, and `kalshi-agent-monitors.timer` hasn't been
+`monitors/`/`run_monitors.sh` scaffold are pushed to GitHub (`main`) but not
+yet pulled onto the server, and `kalshi-agent-monitors.timer` hasn't been
 installed/enabled — needs the same one-time `systemctl enable --now` step
 the other two units got, plus a fresh round of manual verification runs
 (same pattern as the original three-manual-runs verification for
 `agent_loop.sh`) given how much more latitude this grants versus what was
-actually verified live so far.
+actually verified live so far. Specifically verify the credential-scrubbing
+in `run_monitors.sh` (below) actually prevents a nested `claude` invocation
+from authenticating before trusting the 2-minute timer unattended.
+
+## Token/usage-limit protection
+
+**Added 2026-07-16, same session as "Expanded autonomy" above.** Granting
+`Bash(python3 *.py:*)` means any script the agent writes can, in principle,
+`subprocess.run(['claude', '-p', ...])` and spawn another full headless
+session. That's a materially different risk than a bad paper trade or a
+runaway file write: this project's entire cadence assumes **exactly one**
+`claude -p` invocation per hourly cycle (see "Known gray area" above —
+Claude Pro/Max subscription limits for headless/scripted use aren't
+precisely documented, so staying well inside them matters). A script that
+recursively invokes `claude` — especially one firing every 2 minutes via
+`run_monitors.sh` with nobody watching in real time — could burn through
+the account's usage quota fast and silently.
+
+Two mitigations, matched to where each is actually enforceable:
+
+- **`run_monitors.sh` strips Claude Code credentials before running any
+  monitor script** (`env -i PATH=... HOME=...`) — clears
+  `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` and restricts `PATH` to
+  exclude wherever the `claude` binary lives. This is a real technical
+  boundary, not a convention: even if a monitor script tried to shell out
+  to `claude`, it has nothing to authenticate with and can't resolve the
+  binary via a bare-name lookup.
+- **The live hourly turn can't be environment-scrubbed the same way** — it
+  needs `CLAUDE_CODE_OAUTH_TOKEN` in its own environment to run at all, and
+  any subprocess it spawns inherits that by default. This is handled by an
+  explicit, hard prompt-level instruction only (in `agent_loop.sh`'s
+  `PROMPT` and `--append-system-prompt`): never invoke `claude` yourself,
+  from Bash or from any script you write. Watch `/var/log/kalshi-agent.log`
+  and `ps` output for any unexpected `claude` process spawned outside the
+  scheduled hourly/daily units as a sign this was violated.
+- **`agent_loop.sh` takes an `flock` lock** (`/tmp/kalshi-agent-cycle.lock`)
+  so an overlapping manual run and timer fire can't double-invoke `claude`
+  within the same hour — the second invocation exits immediately instead of
+  running concurrently.
+
+**Residual uncertainty, stated plainly:** whether `claude -p` can
+authenticate from some on-disk cached credential independent of
+`CLAUDE_CODE_OAUTH_TOKEN` (e.g. a session file written by the one-time
+`claude setup-token` run) isn't something this repo can verify without
+testing directly on the server. Env-scrubbing closes the most likely path;
+it is not proven airtight — confirm it before trusting the 2-minute timer
+unattended (e.g. have a monitor script attempt
+`subprocess.run(['claude','--version'])` and check it actually fails under
+`run_monitors.sh`'s stripped environment).
 
 ## Telegram
 

@@ -15,6 +15,22 @@ TIMEOUT_SECONDS=60
 LOG_DIR="data/monitor_logs"
 mkdir -p "$LOG_DIR"
 
+# Monitors run with Claude Code credentials stripped and a minimal PATH that
+# excludes the `claude` binary. This is a real technical boundary — unlike
+# the Write/Edit --disallowedTools entries in agent_loop.sh, which only gate
+# Claude Code's own tool calls during a live turn and do nothing to stop a
+# script's internal subprocess/file-I/O calls once it's actually executing.
+# The thing this specifically guards against: a monitor script (accidentally
+# or otherwise) doing `subprocess.run(['claude', '-p', ...])` and silently
+# burning the account's Claude usage quota every 2 minutes with nobody
+# watching. Without CLAUDE_CODE_OAUTH_TOKEN/ANTHROPIC_API_KEY in its
+# environment and without `claude` reachable via a bare-name PATH lookup, a
+# nested invocation fails immediately instead of authenticating. See
+# CLAUDE.md's "Token/usage-limit protection" section — including the
+# residual-uncertainty note about credential fallbacks this hasn't been
+# tested against yet.
+MONITOR_PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 shopt -s nullglob
 for script in monitors/*.py; do
   name="$(basename "$script" .py)"
@@ -22,7 +38,8 @@ for script in monitors/*.py; do
 
   {
     echo "=== $(date -u +%FT%TZ) running $script ==="
-    timeout "$TIMEOUT_SECONDS" python3 "$script"
+    env -i "PATH=$MONITOR_PATH" "HOME=$HOME" \
+      timeout "$TIMEOUT_SECONDS" python3 "$script"
     status=$?
     if [[ $status -eq 124 ]]; then
       echo "=== TIMED OUT after ${TIMEOUT_SECONDS}s ==="

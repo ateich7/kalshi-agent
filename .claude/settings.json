@@ -3,6 +3,7 @@
     "allow": [
       "Bash(python3 record_trade.py:*)",
       "Read(//root/kalshi-agent/**)",
+      "WebSearch",
       "Edit(//root/kalshi-agent/strategy_notes.md)"
     ]
   }

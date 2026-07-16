@@ -126,10 +126,23 @@ The agent runs via the user's existing Claude Code subscription (headless
 `claude -p`, authenticated with `CLAUDE_CODE_OAUTH_TOKEN` from a one-time
 `claude setup-token` run) — **not** a metered `ANTHROPIC_API_KEY`. Per-cycle
 tool access is deliberately narrow: `--allowedTools
-"Bash(python record_trade.py:*),Read,Edit(strategy_notes.md)"` — it can log a
-paper trade and edit its own notes file, nothing else. `.claude/settings.json`
-carries the same allowlist as defense-in-depth for any non-headless
-invocation in this directory.
+"Bash(python3 record_trade.py:*),Read,WebSearch,Edit(strategy_notes.md)"` —
+it can log a paper trade, look up a live fact, and edit its own notes file,
+nothing else. `.claude/settings.json` carries the same allowlist as
+defense-in-depth for any non-headless invocation in this directory.
+
+**WebSearch was added 2026-07-16**, after the first live cycle showed the
+agent correctly declining to trade on most markets because it had no
+independent read on live facts (BTC/ETH spot price, current weather,
+contestant news) — without it, `implied_prob` from the snapshot is the only
+signal, so "mispriced" collapses to "disagrees with the crowd," not a real
+edge. Known tradeoff, accepted deliberately: web content is untrusted
+input to an autonomous loop, so this opens a prompt-injection surface that
+didn't exist before (a fetched page could contain text aimed at the agent).
+Mitigated by keeping the write surface unchanged — WebSearch only feeds
+reasoning, it doesn't unlock any new write action — and by an explicit
+system-prompt instruction to treat search results as data, never
+instructions.
 
 **Cadence:** starts at every 60 minutes (systemd timer, mirroring
 `latency-collect.service`'s pattern) — conservative because Claude Pro/Max
@@ -145,13 +158,18 @@ this trips any enforcement or rate limit, the fallback is a metered
 `ANTHROPIC_API_KEY` with an explicit spend cap (would need re-plumbing
 `agent_loop.sh` to call the API directly instead of the CLI).
 
-**Verify before trusting the timer:** the exact interaction between
-`--allowedTools` and headless mode's tool-denial behavior was researched
-but not independently verified end-to-end in this repo before first deploy —
-run `./agent_loop.sh` manually at least once and confirm (a) it actually
-declines anything outside the allowlist rather than silently proceeding, and
-(b) `strategy_notes.md`/`paper_trades.csv` update sensibly, before relying on
-the timer unattended.
+**Verified 2026-07-16:** ran `./agent_loop.sh` manually three times while
+debugging first deploy. Findings, in order: (1) an untrusted-workspace state
+in `/root/.claude.json` made headless mode ignore `.claude/settings.json` and
+stall waiting for interactive approval it could never get — fixed by running
+`claude` interactively once in `/root/kalshi-agent` and accepting the trust
+dialog (`hasTrustDialogAccepted` in `/root/.claude.json`); (2) the agent
+reached for Bash (not allowlisted) to inspect the 300-market pretty-printed
+snapshot instead of just using Read — fixed by trimming the curated snapshot
+to 12 relevant fields, compact (non-indented) JSON, and top-n 150, plus an
+explicit prompt instruction that Read alone is sufficient; (3) with both
+fixed, a full cycle ran cleanly end to end and produced a sensible
+`strategy_notes.md` entry. Timers enabled after this verification.
 
 Systemd units (server-only, not in git — same convention as
 `baseball-mentions`):
@@ -167,8 +185,8 @@ shared chat gets noisy.
 
 ## Current status
 
-**As of 2026-07-15:** freshly scaffolded, not yet deployed to the server.
-Ledger is empty. Next steps: create the GitHub repo, push, deploy to
-`/root/kalshi-agent/`, install Claude Code CLI on the server if needed, run
-`claude setup-token` (interactive — user must do this step), write and enable
-the systemd units, run one manual cycle to verify before enabling the timer.
+**As of 2026-07-16:** deployed and live. `kalshi-agent-cycle.timer` (hourly)
+and `kalshi-agent-digest.timer` (daily, 13:00 UTC) both enabled. First real
+cycle logged zero trades (correctly — see WebSearch note above for why that
+changed) and one strategy-notes entry. Dashboard not yet published as an
+Artifact — ask for it once there's enough ledger history to be worth a look.

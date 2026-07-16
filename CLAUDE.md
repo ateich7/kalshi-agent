@@ -72,6 +72,8 @@ projects — confirm exact URL once created.
 | `telegram_digest.py` | Daily summary: trades opened/closed, win rate, cumulative P&L, latest strategy notes |
 | `agent_loop.sh` | One full cycle: `resolve_trades.py` → `fetch_snapshot.py` → `claude -p` (tool-restricted) |
 | `strategy_notes.md` | The agent's only persistent memory across cycles — it reads and edits this itself every cycle |
+| `monitors/` | Agent-authored scripts that run **unsupervised, between hourly cycles** — see "Expanded autonomy" section below |
+| `run_monitors.sh` | The only thing that executes `monitors/*.py` — human-authored, protected from agent Write/Edit, runs on a short cadence via `kalshi-agent-monitors.timer` |
 | `reports/build_dashboard_data.py` | Aggregates the ledger into the JSON the Artifact dashboard embeds |
 | `reports/kalshi_agent_dashboard.html` | Artifact source — gitignored like `baseball-mentions/reports/`, published on request, not auto-refreshed |
 
@@ -125,11 +127,12 @@ Logs go to stdout — the systemd service redirects to
 The agent runs via the user's existing Claude Code subscription (headless
 `claude -p`, authenticated with `CLAUDE_CODE_OAUTH_TOKEN` from a one-time
 `claude setup-token` run) — **not** a metered `ANTHROPIC_API_KEY`. Per-cycle
-tool access is deliberately narrow: `--allowedTools
-"Bash(python3 record_trade.py:*),Read,WebSearch,Edit(strategy_notes.md)"` —
-it can log a paper trade, look up a live fact, and edit its own notes file,
-nothing else. `.claude/settings.json` carries the same allowlist as
-defense-in-depth for any non-headless invocation in this directory.
+tool access is broad by design (see "Expanded autonomy" below):
+`--allowedTools "Read,WebSearch,Write,Edit,Bash(python3 *.py:*)"` paired with
+`--disallowedTools` covering a short list of protected files (ledger
+integrity + the agent's own harness). `.claude/settings.json` carries the
+same allow/deny shape as defense-in-depth for any non-headless invocation in
+this directory.
 
 **WebSearch was added 2026-07-16**, after the first live cycle showed the
 agent correctly declining to trade on most markets because it had no
@@ -175,6 +178,78 @@ Systemd units (server-only, not in git — same convention as
 `baseball-mentions`):
 - `kalshi-agent-cycle.service` + `.timer` — runs `agent_loop.sh` hourly
 - `kalshi-agent-digest.service` + `.timer` — runs `telegram_digest.py` daily
+- `kalshi-agent-monitors.service` + `.timer` — runs `run_monitors.sh` every 2
+  minutes (see "Monitors" below; added 2026-07-16, not yet deployed to the
+  server as of this writing — needs manual `systemctl enable --now` like the
+  other two units did)
+
+## Expanded autonomy — general Write/Edit/Bash(python3), 2026-07-16
+
+**This was a deliberate, explicit user decision to widen scope beyond an
+initial narrower design** (a `monitors/*.py`-only write scope was built
+first and rejected as too restrictive the same day — see git history on
+`agent_loop.sh`/`CLAUDE.md` around 2026-07-16 if you need the earlier
+version's reasoning). The agent can now Write/Edit anywhere in this repo and
+run any Python file it writes via `Bash(python3 *.py:*)`, so it can build
+real tooling across cycles — helper modules, indicator libraries, backtests
+— not just record one-off trades. `monitors/` remains the designated
+location for scripts meant to run **unsupervised between hourly cycles**:
+`run_monitors.sh` executes every `monitors/*.py` file on a 2-minute cadence
+(`kalshi-agent-monitors.timer`), independent of `agent_loop.sh`, so
+time-sensitive conditions (a strike ladder crossing a threshold, a countdown
+to a known settlement time) don't have to wait up to 60 minutes.
+
+**The honest technical framing, worth restating precisely:** once an agent
+can write and execute arbitrary Python, there is no meaningful sandbox left
+to describe — stdlib alone (`subprocess`, `os`, `socket`, `shutil`) can do
+anything a raw shell command can. A directory-scoped write path (the
+original `monitors/`-only design) was never a real security boundary once
+code execution is in play; it was organizational tidiness at best. This
+section exists so nobody down the line mistakes the remaining guardrails
+for more than they are.
+
+**What's still structurally protected, and why each one is worth its keep
+despite the "unleash it" mandate** (enforced via `--disallowedTools` in
+`agent_loop.sh` and the `deny` list in `.claude/settings.json`):
+- `kalshi_public.py`, `record_trade.py`, `resolve_trades.py`,
+  `data/paper_trades.csv` — the ledger's integrity. `record_trade.py`
+  validates a market is actually open before logging a trade; if the agent
+  could write the CSV directly or edit settlement math, its own track
+  record would stop being evidence of anything, which defeats the entire
+  point of this project (calibration over time, not just activity).
+- `agent_loop.sh`, `run_monitors.sh`, `.claude/settings.json`, `CLAUDE.md` —
+  its own harness/permissions. Letting it edit the rules that constrain it
+  is a straightforward privilege-escalation hole, independent of trading
+  risk entirely.
+- OS-level scheduling (cron/systemd) is still **not** granted to the agent
+  itself — `run_monitors.sh` is a human-installed, fixed-cadence runner.
+  This is a deliberate orthogonal boundary: giving an LLM direct
+  `crontab`/`systemctl` access is a server-administration risk, not a
+  trading-sophistication one, and costs it nothing creative to not have it.
+
+**A new consideration this expansion actually introduces (financial risk is
+unaffected — the Kalshi safety invariant is absence-of-credential, not a
+permission, so it holds regardless of write/exec scope):** this environment
+holds a live `TELEGRAM_TOKEN` (see `telegram.py`/Telegram section below).
+Broad code execution means the agent *could* use it to message the user's
+real phone at will — a genuine real-world side effect, unlike everything
+else here which stays inside the ledger/filesystem sandbox. This is **not**
+structurally blocked (denying Read on `telegram.py` wouldn't meaningfully
+stop a determined script from hitting the Telegram Bot API directly, since
+the token is just inherited from the environment by any Python process) —
+it's handled by an explicit prompt-level instruction only: never send a
+Telegram message outside the existing daily-digest path. Watch
+`/var/log/kalshi-agent.log` and the Telegram chat itself for any violation
+of this in the first weeks after deploy.
+
+**Not yet deployed as of 2026-07-16:** the expanded allowlist and
+`monitors/`/`run_monitors.sh` scaffold exist in the repo but haven't been
+pushed to the server, and `kalshi-agent-monitors.timer` hasn't been
+installed/enabled — needs the same one-time `systemctl enable --now` step
+the other two units got, plus a fresh round of manual verification runs
+(same pattern as the original three-manual-runs verification for
+`agent_loop.sh`) given how much more latitude this grants versus what was
+actually verified live so far.
 
 ## Telegram
 

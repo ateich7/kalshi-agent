@@ -13,8 +13,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 echo "=== $(date -u +%FT%TZ) agent_loop starting ==="
 
-python resolve_trades.py
-python fetch_snapshot.py --close-within-hours 72 --top-n 300
+python3 resolve_trades.py
+python3 fetch_snapshot.py --close-within-hours 72 --top-n 300
 
 PROMPT=$(cat <<'EOF'
 You are running one cycle of an ongoing Kalshi paper-trading research loop.
@@ -38,7 +38,7 @@ Do this, in order:
    of the true probability, given whatever domain reasoning applies (this
    could be sports, weather, economic releases, entertainment, anything).
    For each one you're confident in, run:
-     python record_trade.py --ticker <TICKER> --side yes|no --price <0-1> \
+     python3 record_trade.py --ticker <TICKER> --side yes|no --price <0-1> \
        --size <hypothetical dollars, keep it in a consistent $5-$50 range
        so P&L stays comparable across trades> --rationale "<why>"
    Quality over quantity — recording a trade you don't actually believe in
@@ -53,7 +53,7 @@ EOF
 )
 
 claude -p "$PROMPT" \
-  --allowedTools "Bash(python record_trade.py:*),Read,Edit(strategy_notes.md)" \
+  --allowedTools "Bash(python3 record_trade.py:*),Read,Edit(strategy_notes.md)" \
   --append-system-prompt "Paper-trading only. No Kalshi credential exists in this environment; never attempt to place a real order."
 
 echo "=== $(date -u +%FT%TZ) agent_loop done ==="

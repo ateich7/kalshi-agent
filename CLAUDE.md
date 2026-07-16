@@ -44,10 +44,14 @@ calling the *intended* code path.
 
 ## Python version
 
-Same as sibling projects — use `python` (Anaconda 3.9.13) locally, never
-`python3`. On the server, use `/root/baseball-env/bin/python` (the shared
-virtualenv — reused across all sibling projects, not baseball-specific
-despite the name). Use `Optional[X]`/`List`/`Dict` typing, not `X | Y`.
+Unlike the sibling projects, this one has **zero third-party dependencies**
+(no `cryptography`, no ML libraries — `kalshi_public.py` is stdlib-only
+`urllib`, since there's no request signing to do). So the usual
+Anaconda-vs-system-Python trap doesn't apply here: use plain `python3`
+everywhere, local and server (confirmed both resolve to a compatible 3.9+
+locally and 3.12 on the server; no venv needed on the server for this
+project). Still avoid `X | Y` union hints and bare `list[...]`/`dict[...]`
+subscripts in case that changes — keep it a habit.
 
 ## Paths
 

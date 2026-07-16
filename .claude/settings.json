@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python record_trade.py:*)",
+      "Bash(python3 record_trade.py:*)",
       "Read(//root/kalshi-agent/**)",
       "Edit(//root/kalshi-agent/strategy_notes.md)"
     ]

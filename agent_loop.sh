@@ -14,15 +14,18 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 echo "=== $(date -u +%FT%TZ) agent_loop starting ==="
 
 python3 resolve_trades.py
-python3 fetch_snapshot.py --close-within-hours 72 --top-n 300
+python3 fetch_snapshot.py --close-within-hours 72 --top-n 150
 
 PROMPT=$(cat <<'EOF'
 You are running one cycle of an ongoing Kalshi paper-trading research loop.
 You are paper-trading ONLY. There is no Kalshi API key anywhere in this
 environment — you have no ability to place a real order and must never try
 to construct one (e.g. by writing your own signed HTTP request). Your only
-write actions this cycle are: (1) calling record_trade.py to log a
-hypothetical trade, and (2) editing strategy_notes.md.
+tools this cycle are Read, Edit (strategy_notes.md only), and Bash restricted
+to `python3 record_trade.py`. You do NOT have general Bash access — do not
+attempt to use Bash/python/jq/grep to inspect or filter any file, including
+the snapshot; every file mentioned below is already sized and trimmed to be
+read directly with the Read tool, which is sufficient on its own.
 
 Do this, in order:
 
@@ -33,7 +36,8 @@ Do this, in order:
 3. Read data/snapshots/latest.json — today's curated snapshot: the highest-
    24h-volume markets closing in the next 72 hours, across every Kalshi
    category (not just sports), each with an `implied_prob` computed from the
-   current bid/ask midpoint.
+   current bid/ask midpoint. It's pre-trimmed to just the relevant fields —
+   read it directly, no processing needed.
 4. Decide whether any markets look mispriced relative to your own estimate
    of the true probability, given whatever domain reasoning applies (this
    could be sports, weather, economic releases, entertainment, anything).

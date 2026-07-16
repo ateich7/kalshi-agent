@@ -12,11 +12,14 @@ cycle. So this script:
      public API's `max_close_ts` filter (kalshi_public.get_all_open_markets).
   2. Archives the FULL raw result to data/snapshots/<timestamp>_full.jsonl
      (so nothing is thrown away — useful for later backtesting/analysis).
-  3. Writes a CURATED top --top-n (default 300) subset, ranked by 24h volume,
-     to data/snapshots/latest.json — this is the file the agent actually
-     reads each cycle. Sorting by volume favors markets with real two-sided
-     trading activity (where mispricing is more likely to mean something)
-     over the long tail of near-dead, zero-volume markets.
+  3. Writes a CURATED top --top-n (default 150) subset, ranked by 24h volume,
+     trimmed to only the fields worth reasoning over, to
+     data/snapshots/latest.json — this is the file the agent actually reads
+     each cycle via the Read tool (it has no Bash access to process JSON, by
+     design, so this file needs to already be small and plain enough to just
+     read). Sorting by volume favors markets with real two-sided trading
+     activity (where mispricing is more likely to mean something) over the
+     long tail of near-dead, zero-volume markets.
 
 No Kalshi credential of any kind is used or required — see kalshi_public.py.
 """
@@ -35,7 +38,7 @@ SNAPSHOT_DIR = Path(__file__).parent / 'data' / 'snapshots'
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--close-within-hours', type=float, default=72)
-    ap.add_argument('--top-n', type=int, default=300)
+    ap.add_argument('--top-n', type=int, default=150)
     args = ap.parse_args()
 
     client = KalshiPublicClient()
@@ -60,7 +63,13 @@ def main():
         except (TypeError, ValueError):
             return 0.0
 
-    curated = sorted(markets, key=vol, reverse=True)[:args.top_n]
+    KEEP_FIELDS = (
+        'ticker', 'event_ticker', 'title', 'yes_sub_title', 'no_sub_title',
+        'status', 'close_time', 'implied_prob', 'yes_bid_dollars',
+        'yes_ask_dollars', 'volume_24h_fp', 'liquidity_dollars',
+    )
+    curated_full = sorted(markets, key=vol, reverse=True)[:args.top_n]
+    curated = [{k: m.get(k) for k in KEEP_FIELDS} for m in curated_full]
     latest_path = SNAPSHOT_DIR / 'latest.json'
     with open(latest_path, 'w') as f:
         json.dump({
@@ -69,7 +78,7 @@ def main():
             'total_markets_seen': len(markets),
             'curated_count': len(curated),
             'markets': curated,
-        }, f, indent=2)
+        }, f, separators=(',', ':'))
 
     print(f'fetch_snapshot: {len(markets)} markets closing within '
           f'{args.close_within_hours}h ({elapsed:.1f}s) -> {full_path.name}; '

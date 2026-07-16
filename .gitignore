@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Claude local settings (only settings.json is committed; .local.json is per-session)
+.claude/settings.local.json
+
+# Runtime state — server-generated, grows continuously, not meaningfully
+# version-controlled (same treatment as baseball-mentions/monitor_state.json)
+data/
+strategy_notes.md
+
+# Generated dashboard HTML (Artifact source — redeploy via the Artifact tool;
+# same treatment as baseball-mentions/reports/). build_dashboard_data.py is a
+# real pipeline script and stays tracked.
+reports/*.html
+
+# macOS
+.DS_Store

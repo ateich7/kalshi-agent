@@ -186,7 +186,9 @@ shared chat gets noisy.
 ## Current status
 
 **As of 2026-07-16:** deployed and live. `kalshi-agent-cycle.timer` (hourly)
-and `kalshi-agent-digest.timer` (daily, 13:00 UTC) both enabled. First real
+and `kalshi-agent-digest.timer` (daily, 5pm America/New_York — DST-safe via
+an explicit timezone in `OnCalendar`, not a hardcoded UTC offset) both
+enabled. First real
 cycle logged zero trades (correctly — see WebSearch note above for why that
 changed) and one strategy-notes entry. Dashboard not yet published as an
 Artifact — ask for it once there's enough ledger history to be worth a look.

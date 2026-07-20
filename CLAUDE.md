@@ -332,3 +332,21 @@ enabled. First real
 cycle logged zero trades (correctly — see WebSearch note above for why that
 changed) and one strategy-notes entry. Dashboard not yet published as an
 Artifact — ask for it once there's enough ledger history to be worth a look.
+
+**As of 2026-07-20:** ~78 cycles in. Realized P&L is -$114.31, dominated by
+one large loss (an 8-fill, $140 Rotten Tomatoes ladder position that
+averaged down for 30+ cycles on aggregator press before the market's own
+ladder structure — correctly, in hindsight — signaled the true settle;
+full post-mortem is in `strategy_notes.md`). Same session, found and fixed
+a real deployment gap: the server had been running `agent_loop.sh` 3
+commits behind `main` since 2026-07-16, still on the narrow
+pre-"expanded-autonomy" allowlist (no `Write` tool, `Edit` scoped to
+`strategy_notes.md` only), with `monitors/`/`run_monitors.sh` absent
+entirely. Pulled the server current, then found the credential-scrubbing in
+`run_monitors.sh` did **not** actually hold as designed (see "Token/
+usage-limit protection" above) — fixed and re-verified before enabling
+anything. `kalshi-agent-monitors.timer` is now installed and enabled
+(2-minute cadence), completing the "Expanded autonomy" deployment. `monitors/`
+currently holds only the skipped `_template.py`, so the agent hasn't
+authored any monitor scripts yet — next hourly cycle is the first with the
+full expanded toolset live.

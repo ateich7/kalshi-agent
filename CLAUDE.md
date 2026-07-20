@@ -253,16 +253,14 @@ Telegram message outside the existing daily-digest path. Watch
 `/var/log/kalshi-agent.log` and the Telegram chat itself for any violation
 of this in the first weeks after deploy.
 
-**Not yet deployed as of 2026-07-16:** the expanded allowlist and
-`monitors/`/`run_monitors.sh` scaffold are pushed to GitHub (`main`) but not
-yet pulled onto the server, and `kalshi-agent-monitors.timer` hasn't been
-installed/enabled — needs the same one-time `systemctl enable --now` step
-the other two units got, plus a fresh round of manual verification runs
-(same pattern as the original three-manual-runs verification for
-`agent_loop.sh`) given how much more latitude this grants versus what was
-actually verified live so far. Specifically verify the credential-scrubbing
-in `run_monitors.sh` (below) actually prevents a nested `claude` invocation
-from authenticating before trusting the 2-minute timer unattended.
+**Deployed 2026-07-20** (had sat pushed-but-unpulled on the server since
+2026-07-16 — caught when a status check found the live `agent_loop.sh` was
+3 commits behind `main` and still running the old narrow allowlist with no
+`Write` tool at all). Pulled onto the server, verified the credential-
+scrubbing gap described in "Token/usage-limit protection" below (it did NOT
+hold as originally written — fixed and re-verified before going further),
+then installed and enabled `kalshi-agent-monitors.service`/`.timer` via
+`systemctl enable --now`, mirroring the other two units.
 
 ## Token/usage-limit protection
 
@@ -282,11 +280,12 @@ Two mitigations, matched to where each is actually enforceable:
 
 - **`run_monitors.sh` strips Claude Code credentials before running any
   monitor script** (`env -i PATH=... HOME=...`) — clears
-  `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` and restricts `PATH` to
-  exclude wherever the `claude` binary lives. This is a real technical
-  boundary, not a convention: even if a monitor script tried to shell out
-  to `claude`, it has nothing to authenticate with and can't resolve the
-  binary via a bare-name lookup.
+  `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY`, restricts `PATH` to exclude
+  wherever the `claude` binary lives, **and redirects `HOME` to an empty
+  scratch directory** (`.monitor_home/`, gitignored) rather than passing the
+  real `$HOME` through. This is a real technical boundary, not a
+  convention — but see the verified finding below for why all three parts
+  are load-bearing, not just the env-var clearing.
 - **The live hourly turn can't be environment-scrubbed the same way** — it
   needs `CLAUDE_CODE_OAUTH_TOKEN` in its own environment to run at all, and
   any subprocess it spawns inherits that by default. This is handled by an
@@ -300,15 +299,22 @@ Two mitigations, matched to where each is actually enforceable:
   within the same hour — the second invocation exits immediately instead of
   running concurrently.
 
-**Residual uncertainty, stated plainly:** whether `claude -p` can
-authenticate from some on-disk cached credential independent of
-`CLAUDE_CODE_OAUTH_TOKEN` (e.g. a session file written by the one-time
-`claude setup-token` run) isn't something this repo can verify without
-testing directly on the server. Env-scrubbing closes the most likely path;
-it is not proven airtight — confirm it before trusting the 2-minute timer
-unattended (e.g. have a monitor script attempt
-`subprocess.run(['claude','--version'])` and check it actually fails under
-`run_monitors.sh`'s stripped environment).
+**Resolved 2026-07-20 (was the "residual uncertainty" flagged at design
+time):** tested directly on the server before enabling
+`kalshi-agent-monitors.timer`. The original `run_monitors.sh` passed the
+real `$HOME` through (`env -i PATH=... "HOME=$HOME"`), clearing only the
+env vars. Under that exact stripped environment, `claude -p 'reply with
+exactly: PING' --max-turns 1` **still authenticated and ran successfully**
+— it fell back to the on-disk session file at `~/.claude/.credentials.json`
+(written by the one-time `claude setup-token` run), which variable-scrubbing
+does nothing to hide since the real `$HOME`'s filesystem contents stayed
+fully reachable. Confirmed the fix: redirecting `HOME` to an empty directory
+makes the identical `claude -p` call fail immediately with "Not logged in"
+instead of proceeding. Also tightened `MONITOR_PATH` to drop
+`/usr/local/bin` (where `claude` actually lives on this server — `python3`
+is at `/usr/bin`, so it wasn't needed), making the PATH-exclusion claim
+literally true rather than incidentally-broken. Both the `HOME` redirect and
+the tightened `PATH` are now verified, real boundaries.
 
 ## Telegram
 

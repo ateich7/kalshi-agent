@@ -15,21 +15,32 @@ TIMEOUT_SECONDS=60
 LOG_DIR="data/monitor_logs"
 mkdir -p "$LOG_DIR"
 
-# Monitors run with Claude Code credentials stripped and a minimal PATH that
-# excludes the `claude` binary. This is a real technical boundary — unlike
-# the Write/Edit --disallowedTools entries in agent_loop.sh, which only gate
-# Claude Code's own tool calls during a live turn and do nothing to stop a
-# script's internal subprocess/file-I/O calls once it's actually executing.
+# Monitors run with Claude Code credentials stripped, HOME redirected to an
+# empty scratch dir, and a PATH that excludes wherever the `claude` binary
+# lives. This is a real technical boundary — unlike the Write/Edit
+# --disallowedTools entries in agent_loop.sh, which only gate Claude Code's
+# own tool calls during a live turn and do nothing to stop a script's
+# internal subprocess/file-I/O calls once it's actually executing.
 # The thing this specifically guards against: a monitor script (accidentally
 # or otherwise) doing `subprocess.run(['claude', '-p', ...])` and silently
 # burning the account's Claude usage quota every 2 minutes with nobody
-# watching. Without CLAUDE_CODE_OAUTH_TOKEN/ANTHROPIC_API_KEY in its
-# environment and without `claude` reachable via a bare-name PATH lookup, a
-# nested invocation fails immediately instead of authenticating. See
-# CLAUDE.md's "Token/usage-limit protection" section — including the
-# residual-uncertainty note about credential fallbacks this hasn't been
-# tested against yet.
-MONITOR_PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# watching.
+#
+# Verified 2026-07-20 on the server: passing the real $HOME through (as an
+# earlier version of this script did) is NOT sufficient on its own —
+# `claude -p` under a stripped env with no CLAUDE_CODE_OAUTH_TOKEN/
+# ANTHROPIC_API_KEY still authenticated successfully by falling back to the
+# on-disk session file at ~/.claude/.credentials.json (written by the
+# one-time `claude setup-token` run), which env -i's variable-stripping does
+# nothing to hide since it leaves the real HOME's filesystem contents fully
+# reachable. This resolves the residual-uncertainty note that used to be
+# here. Redirecting HOME to an empty directory closes it: confirmed
+# `claude -p` then fails immediately with "Not logged in" instead of
+# proceeding. Both this and the PATH exclusion are real, tested boundaries;
+# neither alone was — keep both.
+MONITOR_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+MONITOR_HOME="$(pwd)/.monitor_home"
+mkdir -p "$MONITOR_HOME"
 
 shopt -s nullglob
 for script in monitors/*.py; do
@@ -38,7 +49,7 @@ for script in monitors/*.py; do
 
   {
     echo "=== $(date -u +%FT%TZ) running $script ==="
-    env -i "PATH=$MONITOR_PATH" "HOME=$HOME" \
+    env -i "PATH=$MONITOR_PATH" "HOME=$MONITOR_HOME" \
       timeout "$TIMEOUT_SECONDS" python3 "$script"
     status=$?
     if [[ $status -eq 124 ]]; then

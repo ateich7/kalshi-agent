@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 .venv/
 
+# Empty scratch HOME run_monitors.sh redirects monitor scripts into
+.monitor_home/
+
 # Claude local settings (only settings.json is committed; .local.json is per-session)
 .claude/settings.local.json
 

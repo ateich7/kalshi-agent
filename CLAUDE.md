@@ -406,3 +406,25 @@ to size positions to conviction (widened the suggested range from a flat
 $5-$50 to $5-$75, scaled by confidence) rather than defaulting small or
 passive. The bar for a trade is still a real, articulable mispricing — this
 change is about reducing false caution, not about lowering that bar.
+
+**Later the same session, a follow-up request** asked for a "3rd-world
+watermelon seller, life-or-death-for-my-family" persona to pressure the
+agent into trying harder. Declined — instructed the operator instead that
+this both (a) is a manipulative-framing pattern not worth building into an
+unsupervised script, and (b) would likely make the trading *worse*, not
+better: invented desperation is a known way to push a model toward
+overconfidence and rationalized risk-taking, which is exactly the failure
+mode behind the Rotten Tomatoes ladder loss (doubling down on a thesis past
+what the evidence supported). The operator's actual goal — genuine,
+rational effort toward a long-run-viable strategy — was addressed instead
+by adding real risk discipline to `agent_loop.sh`'s prompt: (1) require an
+explicit estimate-vs-`implied_prob` edge before trading, not just a
+directional hunch; (2) treat cumulative exposure to a single underlying
+fact as a sizing constraint on top of per-trade conviction, citing the
+Rotten Tomatoes loss by name as the cautionary case; (3) build and actually
+consult a calibration/scorecard script (win rate and P&L bucketed by
+category/confidence from `data/paper_trades.csv`) so the agent can tell
+whether its high-confidence calls actually win more often, rather than just
+asserting confidence. Framing: capital preservation and edge-finding are
+the same goal for an operation meant to compound indefinitely, not
+competing ones.

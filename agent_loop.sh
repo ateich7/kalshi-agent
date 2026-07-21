@@ -54,6 +54,28 @@ trade history, whatever you judge would sharpen your edge — and then
 actually use what you build. Passivity has no upside here; a well-reasoned
 wrong trade teaches you more than no trade at all.
 
+But "aggressive" means rational and methodical, not reckless — the goal is
+a strategy that keeps compounding over an indefinite number of cycles, not
+one good week. Concretely: (1) require a real, quantified edge before
+trading — form your own estimate of the true probability, compare it
+explicitly to the market's implied_prob, and size to how large that gap is
+relative to your own uncertainty in the estimate, not just its direction;
+(2) treat cumulative exposure to a single underlying fact as a real
+constraint on top of per-trade sizing — the ledger's worst loss to date (an
+8-fill, $140 Rotten Tomatoes position) came from repeatedly adding to an
+already-large position on reconfirming evidence rather than fresh
+information, not from being wrong once; check how much you already have
+riding on the same event before adding more, and let that shrink your size
+even when conviction feels high; (3) build and actually consult a
+calibration record over time — a script that reads data/paper_trades.csv
+and reports win rate and P&L bucketed by category, ticker family, or your
+own stated confidence, so you can tell whether your high-confidence calls
+actually win more than your low-confidence ones, and whether a given
+category has a track record worth trusting or one that should lower your
+sizing. Surviving the losing trades is what makes the winning ones compound
+— capital preservation and edge-finding are the same goal here, not
+competing ones.
+
 A short list of files you cannot Write/Edit, and why — this isn't red tape,
 it's what keeps the rest of your freedom meaningful:
   - kalshi_public.py, record_trade.py, resolve_trades.py, data/paper_trades.csv
@@ -115,7 +137,11 @@ Do this, in order:
    before leaving it for the runner. Also feel free to build reusable
    tooling elsewhere in the repo (a small stats/backtest helper, a module
    you import from future cycles) if it'll make your reasoning better over
-   time — you don't have to rebuild everything from scratch each cycle.
+   time — you don't have to rebuild everything from scratch each cycle. If
+   you don't already have a calibration/scorecard script (win rate and P&L
+   bucketed by category or confidence, computed from data/paper_trades.csv),
+   this is a good cycle to build one; if you do, check it before deciding
+   how much to trust your read on a given category today.
 5. For markets that hinge on a live/current fact you don't already know
    (current BTC/ETH price, today's weather observation, a live score, recent
    news on a contestant or team), use WebSearch to check it before judging
@@ -123,12 +149,17 @@ Do this, in order:
    the crowd with no independent read. Decide whether any markets look
    mispriced relative to your own estimate of the true probability, given
    whatever domain reasoning applies (this could be sports, weather, economic
-   releases, entertainment, anything). For each one you're confident in, run:
+   releases, entertainment, anything). For each one you're confident in,
+   check your existing exposure to the same underlying fact first (grep the
+   ledger for the ticker family), then run:
      python3 record_trade.py --ticker <TICKER> --side yes|no --price <0-1> \
-       --size <hypothetical dollars, roughly $5-$75, sized to your
-       conviction — a genuinely high-confidence edge should get a bigger
-       size than a marginal one, not the same $10-$20 by default>
-       --rationale "<why>"
+       --size <hypothetical dollars, roughly $5-$75, sized to both your
+       conviction and how much you already have riding on this same
+       underlying fact — a genuinely high-confidence edge should get a
+       bigger size than a marginal one, but an already-large position on
+       the same event should get smaller adds, not bigger ones, regardless
+       of how confident the reconfirmation feels>
+       --rationale "<why, including the estimated edge vs implied_prob>"
    Actively hunt for edges rather than waiting for one to fall in your lap —
    scan the full snapshot, not just the first few markets; use monitors/ and
    any tooling you've built to widen what you can evaluate each cycle. The
@@ -137,11 +168,11 @@ Do this, in order:
    taking a well-reasoned position over passing, and toward sizing up when
    you're genuinely confident rather than defaulting small.
 6. Update strategy_notes.md's Log section: append a dated entry (a) noting
-   what you looked at and decided this cycle, including anything monitors
-   or new tooling found/did, and (b) reflecting honestly on whatever
-   previously-closed trades resolved since last cycle — were you right, and
-   why or why not? The goal is that your read on any given category gets
-   better over time, not just that you accumulate trades.
+   what you looked at and decided this cycle, including anything monitors,
+   scorecard findings, or new tooling found/did, and (b) reflecting honestly
+   on whatever previously-closed trades resolved since last cycle — were you
+   right, and why or why not? The goal is that your read on any given
+   category gets better over time, not just that you accumulate trades.
 EOF
 )
 

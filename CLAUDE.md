@@ -128,7 +128,7 @@ The agent runs via the user's existing Claude Code subscription (headless
 `claude -p`, authenticated with `CLAUDE_CODE_OAUTH_TOKEN` from a one-time
 `claude setup-token` run) — **not** a metered `ANTHROPIC_API_KEY`. Per-cycle
 tool access is broad by design (see "Expanded autonomy" below):
-`--allowedTools "Read,WebSearch,Write,Edit,Bash(python3 *.py:*)"` paired with
+`--allowedTools "Read,WebSearch,Write,Edit,Bash(python3:*)"` paired with
 `--disallowedTools` covering a short list of protected files (ledger
 integrity + the agent's own harness). `.claude/settings.json` carries the
 same allow/deny shape as defense-in-depth for any non-headless invocation in
@@ -200,10 +200,16 @@ initial narrower design** (a `monitors/*.py`-only write scope was built
 first and rejected as too restrictive the same day — see git history on
 `agent_loop.sh`/`CLAUDE.md` around 2026-07-16 if you need the earlier
 version's reasoning). The agent can now Write/Edit anywhere in this repo and
-run any Python file it writes via `Bash(python3 *.py:*)`, so it can build
-real tooling across cycles — helper modules, indicator libraries, backtests
-— not just record one-off trades. `monitors/` remains the designated
-location for scripts meant to run **unsupervised between hourly cycles**:
+run any Python it writes via `Bash(python3:*)` (widened 2026-07-21 from
+`Bash(python3 *.py:*)`, which blocked legitimate non-file invocations like
+`python3 -c ...`/`python3 -m ...`; per the "honest technical framing"
+below, the `*.py` restriction was never a real security boundary anyway
+once Write can produce arbitrary `.py` content that `python3 *.py` then
+executes — it only blocked one syntactic form of the same capability), so
+it can build real tooling across cycles — helper modules, indicator
+libraries, backtests — not just record one-off trades. `monitors/` remains
+the designated location for scripts meant to run **unsupervised between
+hourly cycles**:
 `run_monitors.sh` executes every `monitors/*.py` file on a 2-minute cadence
 (`kalshi-agent-monitors.timer`), independent of `agent_loop.sh`, so
 time-sensitive conditions (a strike ladder crossing a threshold, a countdown
@@ -228,7 +234,7 @@ caveat on what that actually buys:**
   only stops Claude Code's Edit/Write *tool* from targeting those paths
   directly. It does **not** stop a script the agent writes elsewhere (e.g.
   `monitors/foo.py`) from opening `data/paper_trades.csv` in plain Python
-  and appending a row, once `Bash(python3 *.py:*)` actually executes that
+  and appending a row, once `Bash(python3:*)` actually executes that
   script — the tool-permission system has no visibility into what a
   script's own file I/O does. So the ledger-integrity list above is a real
   guard against the agent directly editing those files with its tools, but
@@ -275,7 +281,7 @@ then installed and enabled `kalshi-agent-monitors.service`/`.timer` via
 ## Token/usage-limit protection
 
 **Added 2026-07-16, same session as "Expanded autonomy" above.** Granting
-`Bash(python3 *.py:*)` means any script the agent writes can, in principle,
+`Bash(python3:*)` means any script the agent writes can, in principle,
 `subprocess.run(['claude', '-p', ...])` and spawn another full headless
 session. That's a materially different risk than a bad paper trade or a
 runaway file write: this project's entire cadence assumes **exactly one**

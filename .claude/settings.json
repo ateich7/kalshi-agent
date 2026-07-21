@@ -5,7 +5,7 @@
       "WebSearch",
       "Write(//root/kalshi-agent/**)",
       "Edit(//root/kalshi-agent/**)",
-      "Bash(python3 //root/kalshi-agent/*.py:*)"
+      "Bash(python3:*)"
     ],
     "deny": [
       "Write(//root/kalshi-agent/kalshi_public.py)",

@@ -382,3 +382,27 @@ anything. `kalshi-agent-monitors.timer` is now installed and enabled
 currently holds only the skipped `_template.py`, so the agent hasn't
 authored any monitor scripts yet — next hourly cycle is the first with the
 full expanded toolset live.
+
+**As of 2026-07-21:** found and fixed a real bug — `Bash(python3 *.py:*)` in
+both `agent_loop.sh` and `.claude/settings.json` requires a literal `*`
+character (Claude Code Bash permission patterns are prefix+wildcard, not
+glob), so it could never match a real invocation like `python3
+record_trade.py`. This silently blocked every trade for 13 consecutive
+cycles (roughly cycle 79 through 92, ~13 hours) — the agent correctly
+self-diagnosed it, wrote `monitors/diag_outage.py` to confirm the
+environment was otherwise healthy, explicitly declined to bypass the
+restriction, and logged the exact fix needed in `strategy_notes.md` across
+several cycles. Widened to `Bash(python3:*)` in both files, pushed, and
+pulled onto the server; the agent verified the fix itself via a live Kalshi
+API round-trip on the next cycle and cleaned up its own workaround files.
+
+Same session: **the operator explicitly asked for more aggressive,
+creative behavior**, since this is hypothetical money with no real capital
+at risk (the Kalshi safety invariant is unaffected either way). Updated
+`agent_loop.sh`'s prompt to replace the prior "quality over quantity, zero
+trades is a fine outcome" framing with explicit encouragement to build and
+actually use real tooling (screeners, backtests, indicator libraries) and
+to size positions to conviction (widened the suggested range from a flat
+$5-$50 to $5-$75, scaled by confidence) rather than defaulting small or
+passive. The bar for a trade is still a real, articulable mispricing — this
+change is about reducing false caution, not about lowering that bar.

@@ -25,6 +25,8 @@ No Kalshi credential of any kind is used or required — see kalshi_public.py.
 """
 
 import argparse
+import heapq
+import itertools
 import json
 import time
 from datetime import datetime, timezone
@@ -33,6 +35,19 @@ from pathlib import Path
 from kalshi_public import KalshiPublicClient
 
 SNAPSHOT_DIR = Path(__file__).parent / 'data' / 'snapshots'
+
+KEEP_FIELDS = (
+    'ticker', 'event_ticker', 'title', 'yes_sub_title', 'no_sub_title',
+    'status', 'close_time', 'implied_prob', 'yes_bid_dollars',
+    'yes_ask_dollars', 'volume_24h_fp', 'liquidity_dollars',
+)
+
+
+def _vol(m):
+    try:
+        return float(m.get('volume_24h_fp', 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def main():
@@ -43,44 +58,50 @@ def main():
 
     client = KalshiPublicClient()
     t0 = time.time()
-    markets = client.get_all_open_markets(
-        close_within_seconds=int(args.close_within_hours * 3600))
-    elapsed = time.time() - t0
-
-    for m in markets:
-        m['implied_prob'] = client.implied_prob(m)
 
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     full_path = SNAPSHOT_DIR / f'{ts}_full.jsonl'
+
+    # Stream markets one at a time rather than materializing the full
+    # platform-wide result (~60k+ markets as of 2026-07-22, up from ~9k at
+    # 2026-07-16 launch) in memory. Holding all of them at once is what
+    # OOM-killed this script six times in a row on 2026-07-21/22 (961MB box,
+    # anon-rss ~700-723MB observed at each kill). Peak memory here is now one
+    # API page (<=1000 raw dicts) plus a --top-n-sized heap, not the total
+    # market count.
+    counter = itertools.count()
+    heap = []  # (volume, tiebreak, market) tuples, kept at size <= top_n
+    total_seen = 0
+
     with open(full_path, 'w') as f:
-        for m in markets:
+        for m in client.iter_all_open_markets(
+                close_within_seconds=int(args.close_within_hours * 3600)):
+            m['implied_prob'] = client.implied_prob(m)
             f.write(json.dumps(m) + '\n')
+            total_seen += 1
 
-    def vol(m):
-        try:
-            return float(m.get('volume_24h_fp', 0) or 0)
-        except (TypeError, ValueError):
-            return 0.0
+            entry = (_vol(m), next(counter), m)
+            if len(heap) < args.top_n:
+                heapq.heappush(heap, entry)
+            elif entry[0] > heap[0][0]:
+                heapq.heapreplace(heap, entry)
 
-    KEEP_FIELDS = (
-        'ticker', 'event_ticker', 'title', 'yes_sub_title', 'no_sub_title',
-        'status', 'close_time', 'implied_prob', 'yes_bid_dollars',
-        'yes_ask_dollars', 'volume_24h_fp', 'liquidity_dollars',
-    )
-    curated_full = sorted(markets, key=vol, reverse=True)[:args.top_n]
+    elapsed = time.time() - t0
+
+    curated_full = [m for _, _, m in sorted(heap, reverse=True)]
     curated = [{k: m.get(k) for k in KEEP_FIELDS} for m in curated_full]
     latest_path = SNAPSHOT_DIR / 'latest.json'
     with open(latest_path, 'w') as f:
         json.dump({
             'generated_at': datetime.now(timezone.utc).isoformat(),
             'close_within_hours': args.close_within_hours,
-            'total_markets_seen': len(markets),
+            'total_markets_seen': total_seen,
             'curated_count': len(curated),
             'markets': curated,
         }, f, separators=(',', ':'))
 
-    print(f'fetch_snapshot: {len(markets)} markets closing within '
+    print(f'fetch_snapshot: {total_seen} markets closing within '
           f'{args.close_within_hours}h ({elapsed:.1f}s) -> {full_path.name}; '
           f'curated top {len(curated)} by volume -> latest.json')
 

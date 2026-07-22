@@ -428,3 +428,46 @@ whether its high-confidence calls actually win more often, rather than just
 asserting confidence. Framing: capital preservation and edge-finding are
 the same goal for an operation meant to compound indefinitely, not
 competing ones.
+
+**2026-07-22: found and fixed a silent ~5-hour outage caused by
+`fetch_snapshot.py` OOM-killing the hourly cycle, six cycles in a row
+(2026-07-21 23:24 UTC through 2026-07-22 04:23 UTC), recovering on its own
+after that.** `journalctl`/`dmesg` showed the kernel OOM-killer repeatedly
+killing a `python3` process at ~700-723MB anon-rss on this box's 961MB of
+RAM; `/var/log/kalshi-agent.log` confirmed each failed cycle died at the
+exact same line — `python3 fetch_snapshot.py ...` — every time, before ever
+reaching the `claude -p` invocation. **This rules out a Claude usage-limit/
+credit exhaustion explanation**: the process that died was plain stdlib
+Python hitting Kalshi's public REST API, never touching the `claude` binary
+or the Anthropic API; a quota/billing gate would show up as `claude -p`
+itself returning a fast auth/429-style error, not a pure-Python script's
+resident memory climbing to 700MB before the kernel kills it. Root cause:
+`fetch_snapshot.py` called `kalshi_public.get_all_open_markets()`, which
+paginates via `_get_all_pages` and accumulates literally every open market
+closing within 72h into one Python list before writing or ranking anything
+— and that platform-wide count has grown from ~9,000 at 2026-07-16 launch
+to ~60,000+ now, enough raw market dicts to blow through the box's memory.
+This was invisible to the agent itself, unlike the earlier
+`Bash(python3 *.py:*)` outage (2026-07-21 entry above) — the process is
+killed before it can write anything to `strategy_notes.md`, so there was
+nothing for the agent to self-diagnose.
+
+**Fixed by making the pagination and ranking streaming instead of
+batch.** Added `_iter_pages`/`iter_markets`/`iter_all_open_markets`
+generator variants to `kalshi_public.py` (the existing `_get_all_pages`/
+`get_markets`/`get_all_open_markets` list-returning methods are unchanged,
+still used by everything else that only queries a single series and never
+held enough data to matter). Rewrote `fetch_snapshot.py` to stream: each
+market is written to the full archive `.jsonl` as it arrives and pushed
+through a size-capped (`--top-n`, default 150) min-heap keyed by 24h volume,
+rather than sorting the entire ~60k-item list at the end. Verified locally
+against the live API: output is byte-for-byte equivalent in shape (same
+`latest.json` keys, curated markets still sorted descending by volume,
+`total_markets_seen` still accurate at 61,401), and peak RSS dropped from
+the ~700MB that triggered the kills to **~59MB** (`/usr/bin/time -l`,
+`maximum resident set size`) — over a 10x reduction, with headroom to spare
+even if the platform-wide market count keeps growing. Pushed to `main` and
+pulled onto the server same-day; watch `/var/log/kalshi-agent.log` and
+`journalctl -u kalshi-agent-cycle.service` for a few cycles to confirm no
+recurrence, since the underlying driver (market count growth) hasn't been
+addressed, only the memory-per-market-held cost.

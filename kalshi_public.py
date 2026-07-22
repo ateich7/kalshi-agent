@@ -69,8 +69,12 @@ class KalshiPublicClient:
                     continue
                 raise RuntimeError(f'GET {path} -> {e.code}: {body}') from e
 
-    def _get_all_pages(self, path: str, result_key: str, params=None) -> list:
-        out, cursor = [], None
+    def _iter_pages(self, path: str, result_key: str, params=None):
+        """Generator variant of _get_all_pages — yields items one at a time
+        instead of accumulating the full result list in memory. Use this for
+        result sets that can be large (e.g. all open markets platform-wide,
+        tens of thousands at once) — see iter_markets/iter_all_open_markets."""
+        cursor = None
         while True:
             p = dict(params or {})
             p.setdefault('limit', 200)
@@ -78,12 +82,15 @@ class KalshiPublicClient:
                 p['cursor'] = cursor
             data = self._get(path, p)
             items = data.get(result_key, []) or []
-            out.extend(items)
+            for item in items:
+                yield item
             cursor = data.get('cursor')
             if not cursor or not items:
                 break
             time.sleep(PAGE_DELAY_SECONDS)
-        return out
+
+    def _get_all_pages(self, path: str, result_key: str, params=None) -> list:
+        return list(self._iter_pages(path, result_key, params))
 
     # -- Market discovery -------------------------------------------------------
 
@@ -157,11 +164,46 @@ class KalshiPublicClient:
         `close_within_seconds`, if given, bounds results to markets closing
         soon via `max_close_ts` — the practical way to keep a scan tractable
         for both the rate limit and an LLM's context window. Omit for an
-        unbounded (slow, large) full-platform scan."""
+        unbounded (slow, large) full-platform scan.
+
+        This materializes the full result list — as of 2026-07-22 that's
+        ~60,000+ raw market dicts (up from ~9,000 at 2026-07-16 launch),
+        enough to OOM-kill a caller on a small box. Prefer
+        iter_all_open_markets for anything processing the platform-wide set."""
         max_close_ts = None
         if close_within_seconds is not None:
             max_close_ts = int(time.time()) + close_within_seconds
         return self.get_markets(status='open', max_close_ts=max_close_ts)
+
+    def iter_markets(self, series_ticker: str = None, event_ticker: str = None,
+                      status: str = 'open', max_close_ts: int = None,
+                      min_close_ts: int = None):
+        """Generator variant of get_markets — yields one market dict at a
+        time instead of holding the whole result list in memory. Prefer this
+        over get_markets/get_all_open_markets for platform-wide (no
+        series_ticker) queries, where the result set can be tens of
+        thousands of markets."""
+        params = {'status': status, 'limit': 1000}
+        if series_ticker:
+            params['series_ticker'] = series_ticker
+        if event_ticker:
+            params['event_ticker'] = event_ticker
+        if max_close_ts:
+            params['max_close_ts'] = max_close_ts
+        if min_close_ts:
+            params['min_close_ts'] = min_close_ts
+        return self._iter_pages('/markets', 'markets', params)
+
+    def iter_all_open_markets(self, close_within_seconds: int = None):
+        """Generator variant of get_all_open_markets — see iter_markets.
+        This is the one fetch_snapshot.py uses: it lets the caller stream
+        each market to disk and keep only a bounded top-N in memory, instead
+        of holding the full ~60k-market platform-wide list at once (the
+        cause of the 2026-07-21/22 OOM-kill outage on this box)."""
+        max_close_ts = None
+        if close_within_seconds is not None:
+            max_close_ts = int(time.time()) + close_within_seconds
+        return self.iter_markets(status='open', max_close_ts=max_close_ts)
 
     # -- Pricing ----------------------------------------------------------------
 

@@ -3,6 +3,7 @@
     "allow": [
       "Read(//root/kalshi-agent/**)",
       "WebSearch",
+      "WebFetch",
       "Write(//root/kalshi-agent/**)",
       "Edit(//root/kalshi-agent/**)",
       "Bash(python3:*)"

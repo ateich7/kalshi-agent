@@ -128,8 +128,8 @@ The agent runs via the user's existing Claude Code subscription (headless
 `claude -p`, authenticated with `CLAUDE_CODE_OAUTH_TOKEN` from a one-time
 `claude setup-token` run) — **not** a metered `ANTHROPIC_API_KEY`. Per-cycle
 tool access is broad by design (see "Expanded autonomy" below):
-`--allowedTools "Read,WebSearch,Write,Edit,Bash(python3:*)"` paired with
-`--disallowedTools` covering a short list of protected files (ledger
+`--allowedTools "Read,WebSearch,WebFetch,Write,Edit,Bash(python3:*)"` paired
+with `--disallowedTools` covering a short list of protected files (ledger
 integrity + the agent's own harness). `.claude/settings.json` carries the
 same allow/deny shape as defense-in-depth for any non-headless invocation in
 this directory.
@@ -146,6 +146,24 @@ Mitigated by keeping the write surface unchanged — WebSearch only feeds
 reasoning, it doesn't unlock any new write action — and by an explicit
 system-prompt instruction to treat search results as data, never
 instructions.
+
+**WebFetch was added 2026-07-22**, same tradeoff/mitigation as WebSearch
+above (untrusted-content surface, no new write action, explicit
+data-not-instructions framing — now covers both tools in the prompt). Added
+specifically so the agent can actually visit a named alternative-data
+source, not just search for text about it: `agent_loop.sh`'s prompt now
+introduces **worldmonitor.app**, a free, no-signup OSINT-style dashboard
+aggregating real-time conflict/security data (ACLED/UCDP), maritime AIS
+tracking across 13 shipping chokepoints, aviation/ADS-B flight tracking,
+infrastructure (submarine cables, pipelines, LNG terminals), markets/macro
+data, and climate hazards (NASA fire detection, USGS earthquakes) — the
+kind of physical-world ground truth (a ship's position, a flight path,
+seismic data) that a generic news search tends to miss or garble, and that
+could plausibly sharpen edge-finding on geopolitics/energy/climate markets,
+or even celebrity-attendance tickers via private-jet ADS-B tracking. The
+agent is instructed to actually try it and log in `strategy_notes.md`
+whether it's a real, usable edge or a dead end — this is a seed to
+investigate, not a claim that it already works for this project.
 
 **Cadence:** starts at every 60 minutes (systemd timer, mirroring
 `latency-collect.service`'s pattern) — conservative because Claude Pro/Max

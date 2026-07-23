@@ -165,6 +165,21 @@ agent is instructed to actually try it and log in `strategy_notes.md`
 whether it's a real, usable edge or a dead end — this is a seed to
 investigate, not a claim that it already works for this project.
 
+**2026-07-23: the agent's first real test of worldmonitor.app (cycle 120,
+logged in `strategy_notes.md`) found its `/dashboard` URL is a client-side-
+rendered SPA — WebFetch only sees a loading shell, no live data in the
+HTML.** That's a real result for that one URL, but not proof the source is
+a dead end: a SPA like that almost always has a JSON API behind it that's
+directly fetchable even when the rendered page isn't. Updated
+`agent_loop.sh`'s prompt (step 6) same-day to push the agent to actively
+hunt for that kind of real API — checking `robots.txt`/`sitemap.xml`,
+guessing common `/api` paths or a `data.`/`api.` subdomain, looking for a
+docs/developers link or a GitHub repo/client library, reading hostnames out
+of the page's own JS source — rather than stopping at one WebSearch or one
+page fetch. Framed generally (any data source, not just worldmonitor.app)
+since the same technique applies whenever a source's value is real but its
+human-facing page doesn't expose the underlying data.
+
 **Cadence:** starts at every 60 minutes (systemd timer, mirroring
 `latency-collect.service`'s pattern) — conservative because Claude Pro/Max
 subscription rate limits for headless/scripted use aren't precisely

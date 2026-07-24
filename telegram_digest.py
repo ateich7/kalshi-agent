@@ -34,6 +34,7 @@ from record_trade import LEDGER_PATH
 from telegram import tg_send
 
 NOTES_PATH = Path(__file__).parent / 'strategy_notes.md'
+TOKEN_SAVER_FLAG = Path(__file__).parent / '.token_saver_mode'
 
 # strategy_notes.md has drifted between an em-dash and a double-hyphen
 # separator across cycles (e.g. "### 2026-07-19 — Cycle 62" vs
@@ -78,6 +79,10 @@ def format_trade_lines(rows):
 
 
 def summarize_with_claude(notes_text, trade_lines):
+    if TOKEN_SAVER_FLAG.exists():
+        print(f'telegram_digest: token saver mode active ({TOKEN_SAVER_FLAG.read_text().strip()}), '
+              f'skipping claude -p narrative summary')
+        return None
     if not notes_text.strip() and not trade_lines.strip():
         return None
 

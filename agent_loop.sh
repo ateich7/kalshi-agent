@@ -26,6 +26,19 @@ fi
 echo "=== $(date -u +%FT%TZ) agent_loop starting ==="
 
 python3 resolve_trades.py
+
+# Token saver mode: pause all `claude -p` spend while still resolving/
+# maintaining whatever positions are already open. The flag file's content
+# is just an operator-facing note on when it should be cleared -- nothing
+# in this script parses it; reactivation is via an external scheduled job
+# that rm's the file (see CLAUDE.md's "Token saver mode" section).
+TOKEN_SAVER_FLAG="$(dirname "${BASH_SOURCE[0]}")/.token_saver_mode"
+if [ -f "$TOKEN_SAVER_FLAG" ]; then
+  echo "=== $(date -u +%FT%TZ) token saver mode active ($(cat "$TOKEN_SAVER_FLAG")) -- resolved settlements only, skipping fetch_snapshot.py and claude -p ==="
+  echo "=== $(date -u +%FT%TZ) agent_loop done (token saver) ==="
+  exit 0
+fi
+
 python3 fetch_snapshot.py --close-within-hours 72 --top-n 150
 
 PROMPT=$(cat <<'EOF'

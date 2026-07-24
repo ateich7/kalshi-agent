@@ -504,3 +504,50 @@ pulled onto the server same-day; watch `/var/log/kalshi-agent.log` and
 `journalctl -u kalshi-agent-cycle.service` for a few cycles to confirm no
 recurrence, since the underlying driver (market count growth) hasn't been
 addressed, only the memory-per-market-held cost.
+
+## Token saver mode
+
+**Added 2026-07-23** at the operator's request after Claude usage ran out
+mid-month. A flag file, `<repo>/.token_saver_mode` (server-local,
+gitignored, not the same thing across local/server checkouts), pauses all
+`claude -p` spend from this project while it's present:
+
+- `agent_loop.sh` still runs `python3 resolve_trades.py` every hour
+  unconditionally — settlement checks and P&L calc are pure stdlib Python,
+  cost nothing, and keep existing open paper positions maintained/accurate.
+  But if the flag file exists, it logs a line to stdout and exits
+  immediately after that, skipping `fetch_snapshot.py` and the `claude -p`
+  research/trading call entirely — no new market data pulled, no new
+  trades considered.
+- `telegram_digest.py` still sends its daily digest (all deterministic
+  stats: opened/closed counts, win rate, P&L), but skips the second
+  `claude -p` narrative-summary call when the flag is present.
+- `run_monitors.sh`/`monitors/*.py` are untouched by this flag — they never
+  call `claude` in the first place (credentials are scrubbed from their
+  environment; see "Token/usage-limit protection"), so they cost no tokens
+  regardless and keep running on their normal 2-minute cadence.
+
+The flag file's own content is just an operator-facing note (e.g. what
+time it'll be cleared and why) — nothing in the code parses it, only
+whether the file exists matters.
+
+**Turning it on/off:** `touch .token_saver_mode` on the server to pause;
+`rm .token_saver_mode` to resume — takes effect on the next hourly cycle,
+no service restart needed. For a scheduled resume, a real (non-transient)
+systemd oneshot service + timer does the `rm` automatically —
+`kalshi-agent-token-saver-off.service`/`.timer` (server-only, not in git,
+same convention as the other three units). Deliberately **not** a
+`systemd-run` transient timer: those live under `/run` and are wiped on
+reboot, which would silently leave token saver mode stuck on indefinitely
+if the box restarted before the target time. A real unit file in
+`/etc/systemd/system` survives a reboot, and `Persistent=true` on the timer
+means a missed firing (box was down right at the target time) still fires
+as soon as it's back up.
+
+**Active 2026-07-23 through 2026-07-28 13:00 America/New_York** (operator
+ran low on Claude usage and asked for minimal spend until topping up).
+`kalshi-agent-token-saver-off.timer` is set for `2026-07-28 17:00:00 UTC`
+(= 1pm EDT; DST is in effect in July so this is UTC-4, not the UTC-5 of
+winter). Assumed America/New_York for "1pm" per this project's existing
+convention (the digest timer's own `OnCalendar` is explicitly
+America/New_York) — correct this note if that assumption was wrong.

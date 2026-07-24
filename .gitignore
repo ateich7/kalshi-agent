@@ -7,6 +7,10 @@ __pycache__/
 # Empty scratch HOME run_monitors.sh redirects monitor scripts into
 .monitor_home/
 
+# Token saver mode flag — server-local, toggled by operator/scheduled job,
+# not meaningfully version-controlled (see CLAUDE.md's "Token saver mode")
+.token_saver_mode
+
 # Claude local settings (only settings.json is committed; .local.json is per-session)
 .claude/settings.local.json
 

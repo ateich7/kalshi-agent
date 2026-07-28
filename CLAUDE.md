@@ -544,10 +544,17 @@ if the box restarted before the target time. A real unit file in
 means a missed firing (box was down right at the target time) still fires
 as soon as it's back up.
 
-**Active 2026-07-23 through 2026-07-28 13:00 America/New_York** (operator
-ran low on Claude usage and asked for minimal spend until topping up).
-`kalshi-agent-token-saver-off.timer` is set for `2026-07-28 17:00:00 UTC`
-(= 1pm EDT; DST is in effect in July so this is UTC-4, not the UTC-5 of
-winter). Assumed America/New_York for "1pm" per this project's existing
-convention (the digest timer's own `OnCalendar` is explicitly
-America/New_York) — correct this note if that assumption was wrong.
+**Active 2026-07-23 through 2026-07-29 17:00 America/New_York** (operator
+ran low on Claude usage and asked for minimal spend until topping up;
+extended 2026-07-28 — the original 2026-07-28 13:00 auto-clear was pushed
+out a day to keep the pause running through Wednesday).
+`kalshi-agent-token-saver-off.timer` is now set for `2026-07-29
+21:00:00 UTC` (= 5pm EDT; DST is in effect in July so this is UTC-4, not
+the UTC-5 of winter), matching the digest timer's existing
+America/New_York convention. `.token_saver_mode`'s note field was updated
+to match; the flag file and timer were edited directly on the server (this
+setting isn't tracked in git — see "Token saver mode" above), verified via
+`systemctl status kalshi-agent-token-saver-off.timer` showing `Trigger: Wed
+2026-07-29 21:00:00 UTC`. Hourly cycles continue to log settlement-only
+runs (`resolve_trades.py` only, `fetch_snapshot.py`/`claude -p` skipped)
+throughout, confirmed live in `/var/log/kalshi-agent.log`.

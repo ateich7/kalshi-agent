@@ -302,6 +302,29 @@ Telegram message outside the existing daily-digest path. Watch
 `/var/log/kalshi-agent.log` and the Telegram chat itself for any violation
 of this in the first weeks after deploy.
 
+**2026-07-30: fixed a dead-rule gap caused by a Claude Code version upgrade
+(server is on 2.1.211).** As of this version, `Write(path)` permission rules
+are no longer matched at all for the Write tool — every cycle's log filled
+up with warnings like `Permission deny rule (--disallowed-tools):
+Write(record_trade.py) is not matched by file permission checks — only
+Edit(path) rules are... Edit rules cover all file-editing tools`. That
+meant the `Write(...)` entries in both `.claude/settings.json`'s `deny` list
+and `agent_loop.sh`'s `--disallowedTools` had silently become no-ops — only
+their paired `Edit(...)` entries were still actually blocking anything.
+Checked file mtimes on all protected files before fixing: no evidence the
+gap had been exploited. Fixed by deleting the dead `Write(path)` deny
+entries in both files, keeping only `Edit(path)` (which, per the warning
+text above, now covers both tools). **Important, stated explicitly so this
+doesn't get re-litigated later: the agent's ability to Write/author its own
+scripts anywhere else in the repo is an intentional, load-bearing part of
+this project's design (see "Expanded autonomy" below) — this fix only
+restores enforcement on the specific named protected-file list, it is not a
+narrowing of the agent's general write scope, and neither the broad `Write`
+entries in `--allowedTools`/the `allow` list nor `Bash(python3:*)` were
+touched.** If a future Claude Code version changes this permission model
+again, fix it the same way (align deny rules with whatever the warning text
+says actually gets matched) rather than reaching for a broader lockdown.
+
 **Deployed 2026-07-20** (had sat pushed-but-unpulled on the server since
 2026-07-16 — caught when a status check found the live `agent_loop.sh` was
 3 commits behind `main` and still running the old narrow allowlist with no

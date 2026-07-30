@@ -9,21 +9,13 @@
       "Bash(python3:*)"
     ],
     "deny": [
-      "Write(//root/kalshi-agent/kalshi_public.py)",
       "Edit(//root/kalshi-agent/kalshi_public.py)",
-      "Write(//root/kalshi-agent/record_trade.py)",
       "Edit(//root/kalshi-agent/record_trade.py)",
-      "Write(//root/kalshi-agent/resolve_trades.py)",
       "Edit(//root/kalshi-agent/resolve_trades.py)",
-      "Write(//root/kalshi-agent/data/paper_trades.csv)",
       "Edit(//root/kalshi-agent/data/paper_trades.csv)",
-      "Write(//root/kalshi-agent/agent_loop.sh)",
       "Edit(//root/kalshi-agent/agent_loop.sh)",
-      "Write(//root/kalshi-agent/run_monitors.sh)",
       "Edit(//root/kalshi-agent/run_monitors.sh)",
-      "Write(//root/kalshi-agent/.claude/settings.json)",
       "Edit(//root/kalshi-agent/.claude/settings.json)",
-      "Write(//root/kalshi-agent/CLAUDE.md)",
       "Edit(//root/kalshi-agent/CLAUDE.md)"
     ]
   }

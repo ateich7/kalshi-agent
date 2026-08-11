@@ -4,7 +4,6 @@
       "Read(//root/kalshi-agent/**)",
       "WebSearch",
       "WebFetch",
-      "Write(//root/kalshi-agent/**)",
       "Edit(//root/kalshi-agent/**)",
       "Bash(python3:*)"
     ],
@@ -16,7 +15,8 @@
       "Edit(//root/kalshi-agent/agent_loop.sh)",
       "Edit(//root/kalshi-agent/run_monitors.sh)",
       "Edit(//root/kalshi-agent/.claude/settings.json)",
-      "Edit(//root/kalshi-agent/CLAUDE.md)"
+      "Edit(//root/kalshi-agent/CLAUDE.md)",
+      "Edit(//root/kalshi-agent/compact_strategy_notes.py)"
     ]
   }
 }

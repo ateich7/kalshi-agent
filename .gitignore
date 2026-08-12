@@ -4,6 +4,10 @@ __pycache__/
 *.pyo
 .venv/
 
+# Live secrets (TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, CLAUDE_CODE_OAUTH_TOKEN) —
+# loaded by the cycle/digest systemd units via EnvironmentFile, never committed
+.env
+
 # Empty scratch HOME run_monitors.sh redirects monitor scripts into
 .monitor_home/
 

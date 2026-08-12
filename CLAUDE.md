@@ -697,3 +697,69 @@ tight ceiling for the prompt's full 7-step flow. Watch
 `/var/log/kalshi-agent.log` for cycles now cut off mid-task (no trade
 recorded, no notes entry written) as the sign 30 is too tight and needs
 raising back up instead.
+
+**2026-08-12, same day, follow-up: full server directory audit turned up
+four more issues, all fixed.** The operator asked for an in-depth look at
+the server (not just the log) to find durable fixes rather than reactive
+ones. Findings and fixes:
+
+1. **Disk was at 94% full (1.5GB free on a 24GB volume) — an active,
+   near-term crash risk, unrelated to Claude usage but capable of taking
+   down the whole pipeline (and other services on the box) on its own.**
+   `data/snapshots/` alone was 10GB across 347 raw archive files
+   (`*_full.jsonl.gz`), some up to 207MB each, driven by Kalshi's
+   platform-wide open-market count exploding (9k at 2026-07-16 launch, up
+   to 880k+ observed 2026-08-12). Root cause of *why* this had recurred:
+   the agent itself had already hit this exact wall once before and fixed
+   it directly on the server — `fetch_snapshot.py` was writing archives
+   gzipped (added mid-cycle, undocumented) plus pruning anything older than
+   `--archive-retention-days` (default 14) — **but that fix was only ever
+   applied to the server's working tree, never committed to git or logged
+   here**, so it was invisible to `git log`/this file and 14 days turned
+   out to still be too loose once individual gzipped archives themselves
+   regularly hit 100-200MB at current market-count levels. Also confirmed
+   by grep: **nothing in the codebase reads these archives back** — no
+   script, agent-authored or otherwise, references `_full.jsonl` except
+   `fetch_snapshot.py` writing it. It's a pure write-only audit trail.
+   Fixed by: (a) pulling the server's already-diverged `fetch_snapshot.py`/
+   `.gitignore` into git properly so this doesn't happen invisibly again,
+   (b) lowering the default retention 14 → 2 days (nothing reads these back,
+   so a short window costs nothing and caps worst-case disk use), (c)
+   manually pruning archives older than 2 days on the server for immediate
+   relief (freed ~8.4GB). **Lesson for future sessions: `fetch_snapshot.py`
+   is not in the agent's protected-file list, so it can and does get edited
+   directly by the agent — check `git status` on the server periodically
+   for uncommitted drift, not just the log, since a real fix can land there
+   and never make it back to this file or to git.**
+2. **Trimmed the worldmonitor.app API-hunting block in `agent_loop.sh`'s
+   prompt (step 6) and its `--append-system-prompt` duplicate** — this had
+   sat as a ~50-line, fully-enumerated hunting checklist (robots.txt,
+   sitemap, subdomain guessing, JS-bundle reading, GitHub search) ever
+   since the 2026-07-23 investigation that already answered it (see that
+   entry above), meaning every single cycle was still being instructed to
+   redo settled exploratory work — a direct contributor to turn-heavy
+   cycles. Condensed to a pointer at the existing finding plus a one-attempt
+   version of the general technique, reusable for any *new* source.
+3. **Added a size-guarded read path for `data/paper_trades.csv`** (prompt
+   step 2): past ~500KB, the agent is now instructed to use
+   `scorecard.py`'s aggregate output plus a Bash-filtered open-rows-only /
+   last-30-closed-rows view instead of reading the full ledger every cycle.
+   Preventive, not urgent — the ledger is only 188KB/116 rows today, growing
+   ~5-6KB/week — but this is structurally the same unbounded-read shape
+   that made `strategy_notes.md` a problem, just earlier in its growth
+   curve; cheaper to guard now than to rediscover later.
+4. **Tightened the monitors-review instruction** (prompt step 4) to
+   explicitly tail the last ~50-100 lines of each `data/monitor_logs/*.log`
+   rather than reading the full (already self-rotated, up to ~500KB each)
+   file — up to ~2MB combined across 4 logs previously had no guardrail
+   against a full read every cycle.
+
+None of these four required touching the protected-file list or the
+harness's permission model — all changes are inside `agent_loop.sh`'s
+prompt text and `fetch_snapshot.py`'s retention default. Deployed same-day:
+committed, pushed, pulled on the server (reconciling the server's prior
+uncommitted `fetch_snapshot.py`/`.gitignore` drift in the process), old
+archives pruned manually for immediate disk relief. Next cycle onward runs
+with all four in effect — watch `df -h /` and `/var/log/kalshi-agent.log`
+over the next few days to confirm disk stays bounded and cycles aren't
+being starved by the tighter CSV/log-reading guidance.

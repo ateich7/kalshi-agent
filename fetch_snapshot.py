@@ -10,8 +10,25 @@ cycle. So this script:
   1. Fetches everything closing within --close-within-hours (default 72h) —
      bounds the platform-wide scan to a tractable, timely slice via the
      public API's `max_close_ts` filter (kalshi_public.get_all_open_markets).
-  2. Archives the FULL raw result to data/snapshots/<timestamp>_full.jsonl
-     (so nothing is thrown away — useful for later backtesting/analysis).
+  2. Archives the FULL raw result to data/snapshots/<timestamp>_full.jsonl.gz
+     (so nothing is thrown away — useful for later backtesting/analysis, but
+     note nothing in this codebase actually reads these back today; verified
+     2026-08-12 that no script — agent-authored or otherwise — references
+     `_full.jsonl` anywhere except this file writing it. It's a pure audit
+     trail, kept for optionality, not a live dependency).
+     Gzipped directly (not gzipped after the fact) because platform-wide
+     open-market count has been growing fast (61k -> 880k+ observed by
+     2026-08-12) and raw JSONL compresses ~20x — writing uncompressed first
+     briefly drove data/snapshots/ to 11GB against a 24GB disk (96% full,
+     1.2GB free) before the gzip fix. Also prunes archives older than
+     --archive-retention-days each run so this stays bounded even if market
+     count keeps climbing. Default lowered 14 -> 2 on 2026-08-12: even
+     gzipped, individual archives now regularly hit 100-200MB+ at current
+     market-count levels, and 14 days of that reflooded the disk to 94% full
+     (10GB across 347 archives) despite the gzip fix already landing. Since
+     nothing reads these back (see above), there's no real cost to keeping
+     the window short — 2 days is plenty of runway to grab a recent archive
+     by hand if a future backtest ever actually needs one.
   3. Writes a CURATED top --top-n (default 150) subset, ranked by 24h volume,
      trimmed to only the fields worth reasoning over, to
      data/snapshots/latest.json — this is the file the agent actually reads
@@ -25,6 +42,7 @@ No Kalshi credential of any kind is used or required — see kalshi_public.py.
 """
 
 import argparse
+import gzip
 import heapq
 import itertools
 import json
@@ -54,6 +72,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--close-within-hours', type=float, default=72)
     ap.add_argument('--top-n', type=int, default=150)
+    ap.add_argument('--archive-retention-days', type=float, default=2)
     args = ap.parse_args()
 
     client = KalshiPublicClient()
@@ -61,7 +80,7 @@ def main():
 
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    full_path = SNAPSHOT_DIR / f'{ts}_full.jsonl'
+    full_path = SNAPSHOT_DIR / f'{ts}_full.jsonl.gz'
 
     # Stream markets one at a time rather than materializing the full
     # platform-wide result (~60k+ markets as of 2026-07-22, up from ~9k at
@@ -74,7 +93,7 @@ def main():
     heap = []  # (volume, tiebreak, market) tuples, kept at size <= top_n
     total_seen = 0
 
-    with open(full_path, 'w') as f:
+    with gzip.open(full_path, 'wt') as f:
         for m in client.iter_all_open_markets(
                 close_within_seconds=int(args.close_within_hours * 3600)):
             m['implied_prob'] = client.implied_prob(m)
@@ -100,6 +119,16 @@ def main():
             'curated_count': len(curated),
             'markets': curated,
         }, f, separators=(',', ':'))
+
+    cutoff = time.time() - args.archive_retention_days * 86400
+    pruned = 0
+    for old in SNAPSHOT_DIR.glob('*_full.jsonl*'):
+        if old != full_path and old.stat().st_mtime < cutoff:
+            old.unlink()
+            pruned += 1
+    if pruned:
+        print(f'fetch_snapshot: pruned {pruned} archive(s) older than '
+              f'{args.archive_retention_days}d')
 
     print(f'fetch_snapshot: {total_seen} markets closing within '
           f'{args.close_within_hours}h ({elapsed:.1f}s) -> {full_path.name}; '

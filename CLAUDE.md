@@ -653,3 +653,47 @@ setting isn't tracked in git — see "Token saver mode" above), verified via
 2026-07-29 21:00:00 UTC`. Hourly cycles continue to log settlement-only
 runs (`resolve_trades.py` only, `fetch_snapshot.py`/`claude -p` skipped)
 throughout, confirmed live in `/var/log/kalshi-agent.log`.
+
+**2026-08-12: the 08-11 fix (notes rotation + 3h cadence) turned out to
+only be a partial fix — usage-limit exhaustion continued afterward, and the
+operator again couldn't use their own Claude account.** Investigated
+directly on the server rather than assuming the fix regressed. Confirmed
+the 08-11 fix genuinely deployed and is still working as designed: cadence
+is a true 3 hours (`systemctl list-timers` + log timestamps 19:40 → 22:40 →
+01:40...), `strategy_notes.md` stayed small (189KB/433 lines, not the
+1.97MB pre-fix size), and there was no rogue cause — no duplicate/recursive
+`claude` processes, no stray cron, no other project on the box (weather-
+trader, baseball-monitor, mlb-monitor — all separate services, none of
+which invoke `claude`) contributing spend.
+
+**The actual remaining driver: per-cycle work volume, not file size.** The
+08-11 fix removed one specific cost (re-reading an unbounded file) but
+never reduced how much a single cycle *does* — `agent_loop.sh`'s prompt
+still explicitly pushes the agent every cycle to build/update backtests,
+hunt for hidden JSON APIs behind data sources (`robots.txt`, guessing API
+paths, reading JS bundles, GitHub search), maintain `monitors/`, and use
+WebSearch/WebFetch liberally — by design (see "Expanded autonomy" and the
+"be aggressive" framing above). Log evidence from the 9 most recent cycles
+at that point: normal completions took 9-16 minutes with dozens of tool
+calls each; **2 of the 9 hit `Error: Reached max turns (60)`** (used the
+entire ceiling) and **1 of the 9 hit `You've hit your session limit`
+outright, mid-cycle**. Critically, that session-limit message is Claude's
+**account-wide rolling quota**, shared between this headless loop and the
+operator's own interactive Claude Code usage on the same login — not a
+per-project budget. So even at 1/3 the old invocation frequency, 8
+many-tool-call cycles/day were still enough to regularly saturate the same
+pool the operator's own usage draws from.
+
+**Fix: lowered `--max-turns` 60 → 30 in `agent_loop.sh`** (2026-08-12), at
+the operator's direction, as a direct cap on the worst-case tail (the ~2/9
+cycles that were maxing out the ceiling entirely). Note the honest
+limitation of this fix, stated so it doesn't get overclaimed later: it
+bounds the *worst case*, but does not reduce the cost of the ~7/9 cycles
+that already complete comfortably under 60 turns — if usage exhaustion
+recurs after this change, the next lever is trimming the prompt's scope
+(step 6's API-hunting instructions are the most turn-hungry single piece)
+rather than shrinking `--max-turns` further, since 30 is already a fairly
+tight ceiling for the prompt's full 7-step flow. Watch
+`/var/log/kalshi-agent.log` for cycles now cut off mid-task (no trade
+recorded, no notes entry written) as the sign 30 is too tight and needs
+raising back up instead.

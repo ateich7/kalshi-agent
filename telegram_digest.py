@@ -85,6 +85,12 @@ def summarize_with_claude(notes_text, trade_lines):
         return None
     if not notes_text.strip() and not trade_lines.strip():
         return None
+    # Same usage budget as agent_loop.sh (see usage_budget.py): skip if the
+    # agent's share is spent, and debit whatever this call uses.
+    if _budget('gate', '--kind', 'digest').returncode != 0:
+        print('telegram_digest: usage budget blocked the narrative summary')
+        return None
+    _budget('begin', '--kind', 'digest')
 
     prompt = f"""You are writing a short daily Telegram update for the owner of an \
 autonomous Kalshi paper-trading research agent, based on the raw material below. \
@@ -125,6 +131,20 @@ plain "-" dashes are fine. Stay under 180 words. Do not invent facts not present
     except Exception as e:
         print(f'WARN summarize_with_claude: {e}')
         return None
+    finally:
+        _budget('end')
+
+
+def _budget(*args):
+    try:
+        r = subprocess.run(['python3', str(Path(__file__).parent / 'usage_budget.py')] + list(args),
+                           capture_output=True, text=True, timeout=120)
+        if r.stdout.strip():
+            print(r.stdout.strip())
+        return r
+    except Exception as e:
+        print(f'WARN usage_budget {args[0]}: {e}')
+        return subprocess.CompletedProcess(args, 1, '', str(e))
 
 
 def main():
@@ -175,6 +195,12 @@ def main():
 
     notes_text = todays_cycle_notes(today_str)
     summary = summarize_with_claude(notes_text, trade_lines)
+
+    status = _budget('status')
+    if status.returncode == 0 and status.stdout.strip():
+        lines.append('')
+        lines.append('Claude usage budget:')
+        lines.append(status.stdout.strip())
 
     if summary:
         lines.append('')
